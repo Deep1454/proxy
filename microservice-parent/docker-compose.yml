@@ -1,0 +1,199 @@
+#---------------------------------
+# 1. docker-compose -p microservices-comp3095-ecommerce -f docker-compose.yml up -d
+#  -- This command will start containers in detached mode without rebuilding the image (if they already exist)
+#
+# 2. docker-compose -p microservices-comp3095-ecommerce -f docker-compose.yml up -d --build
+# -- This command forces the rebuild of images, even if the image already exist, before starting the containers.
+#---------------------------------
+version: '3.9'
+
+services:
+
+  keycloak:
+    container_name: keycloak
+    hostname: keycloak
+    image: quay.io/keycloak/keycloak:24.0.1
+    command: ["start-dev", "--import-realm"]
+    environment:
+      DB_VENDOR: postgres
+      DB_ADDR: postgres-keycloak
+      DB_DATABASE: keycloak
+      DB_USER: admin
+      DB_PASSWORD: password
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: password
+      ROOT_LOGLEVEL: DEBUG
+      JBOSS_LOG_MANAGER_ROOT_LOGGER: DEBUG, stdout, FILE
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./local-docker-file/keycloak/realms/:/opt/keycloak/data/import
+    depends_on:
+      - postgres-keycloak
+    networks:
+      - spring
+
+  api-gateway:
+    image: api-gateway
+    ports:
+      - "9000:9000"
+    build:
+      context: ./api-gateway
+      dockerfile: ./Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_APPLICATION_JSON={"logging":{"level":{"root":"INFO","ca.gbc.apigateway":"DEBUG"}}}:
+    container_name: api-gateway
+    networks:
+      - spring
+
+  inventory-service:
+    image: inventory-service
+    ports:
+      - "8087:8087"
+    build:
+      context: ./inventory-service
+      dockerfile: ./Dockerfile
+    container_name: inventory-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATABASE_URL: jdbc:postgresql://postgres-inventory:5432/inventory-service
+      SPRING_DATABASE_USERNAME: admin
+      SPRING_DATABASE_PASSWORD: password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+    depends_on:
+      - postgres-inventory
+    networks:
+      - spring
+
+  order-service:
+    image: order-service
+    ports:
+      - "8085:8085"
+    build:
+      context: ./order-service
+      dockerfile: ./Dockerfile
+    container_name: order-service
+    environment:
+      SPRING_DATABASE_URL: jdbc:postgresql://postgres:5432/order-service
+      SPRING_DATABASE_USERNAME: admin
+      SPRING_DATABASE_PASSWORD: password
+      SPRING_JPA_HIBERNATE_DDL_AUTO: none
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      - postgres
+    networks:
+      - spring
+
+  postgres-keycloak:
+    image: postgres
+    ports:
+      - "5431:5432"
+    container_name: postgres-keycloak
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=keycloak
+      - PGDATA=/data/postgres
+    volumes:
+      - ./data/postgres/keycloak:/var/lib/postgresql/data
+    networks:
+      - spring
+
+  postgres-inventory:
+    image: postgres
+    ports:
+      - "5433:5432"
+    container_name: postgres-inventory
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=inventory-service
+      - PGDATA= /data/postgres
+    volumes:
+      - ./data/postgres/inventory:/var/lib/postgresql/data
+      - ./init/postgres/inventory/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - spring
+
+
+  postgres:
+    image: postgres
+    ports:
+      - "5432:5432"
+    container_name: postgres
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+      PGDATA: /data/postgres
+      POSTGRES_DB: order-service
+    volumes:
+      - ./data/postgres/order:/var/lib/postgresql/data
+      - ./init/postgres/order/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - spring
+
+
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - "8888:80"
+    container_name: pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=user@domain.ca
+      - PGADMIN_DEFAULT_PASSWORD=password
+    networks:
+      - spring
+
+
+  product-service:
+    image: product-service
+    ports:
+      - "8084:8084"
+    build:
+      context: ./product-service
+      dockerfile: ./Dockerfile
+    container_name: product-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      - mongodb
+    networks:
+      - spring
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=password
+    volumes:
+      - ./data/mongo/products:/data/db
+      - ./init/mongo/docker-entrypoint-initdb.d/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - spring
+
+  mongo-express:
+    image: mongo-express
+    ports:
+      - "8079:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=password
+      - ME_CONFIG_MONGODB_SERVER=mongodb
+    container_name: mongo-express
+    depends_on:
+      - mongodb
+    networks:
+      - spring
+
+
+volumes:
+  mongo-db:
+    driver: local
+
+networks:
+  spring:
+    driver: bridge

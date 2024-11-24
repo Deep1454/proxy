@@ -1,0 +1,27 @@
+#docker compose for order service
+version: '3.9'
+
+services:
+
+  postgres-order:
+    image: postgres
+    ports:
+      - "5432:5432"
+    container_name: postgres-order
+    environment:
+      - POSTGRES_USER=admin
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - ./data/order:/var/lib/postgresql/data # The database will persist data here on the host machine.
+      - ./init/order/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+
+  pgadmin:
+    image: dpage/pgadmin4
+    ports:
+      - "8888:80"
+    container_name: pgadmin-single
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=user@domain.ca
+      - PGADMIN_DEFAULT_PASSWORD=password
+
